@@ -1,20 +1,18 @@
-package main
+package scripts
 
 import (
 	"context"
-	"fmt"
 	"github.com/joho/godotenv"
 	"google.golang.org/genai"
 	"log"
 )
 
-func main() {
-	err := godotenv.Load()
+func GeminiAI(prompt string) string {
+	err := godotenv.Load(".env")
 	if err != nil {
-		return
+		log.Fatal("Error loading .env file")
 	}
-	ctx := context.Background()
-	// The client gets the API key from the environment variable `GEMINI_API_KEY`.
+	ctx := context.Background() // Assumes API Key is set as GEMINI_API_KEY
 	client, err := genai.NewClient(ctx, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -23,11 +21,11 @@ func main() {
 	result, err := client.Models.GenerateContent(
 		ctx,
 		"gemini-2.5-flash",
-		genai.Text("Explain how AI works in a few words"),
+		genai.Text(prompt),
 		nil,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(result.Text())
+	return result.Text()
 }

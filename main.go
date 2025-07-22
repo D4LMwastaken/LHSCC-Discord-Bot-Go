@@ -1,20 +1,15 @@
 package main
 
 import (
-	"context"
+	"LHSCC-Discord-Bot/main/scripts"
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
-	"google.golang.org/genai"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
-)
-
-var (
-	RemoveCommands = true // Configuration for removing commands from before
 )
 
 var s *discordgo.Session
@@ -30,18 +25,9 @@ func init() {
 	if err != nil {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
-
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		log.Fatal("Error: GEMINI_API_KEY environment variable is not set. Please set it.")
-	}
 }
 
 var (
-	// Needed by Discord
-	integerOptionMinValue int   = 1.0
-	dmPermissions         bool  = false
-	dmMemberPermissions   int64 = discordgo.PermissionManageGuild
-
 	commands = []*discordgo.ApplicationCommand{
 		{
 			Name:        "ping",
@@ -179,7 +165,7 @@ var (
 						{
 							ContentType: "text/plain",
 							Name:        "test.txt",
-							Reader:      strings.NewReader(GeminiAI()),
+							Reader:      strings.NewReader(scripts.GeminiAI("Create random code as fast as you can, it is going to be in a file.")),
 						},
 					},
 				},
@@ -191,13 +177,20 @@ var (
 		},
 
 		"google-gemini-test": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			content := "Please wait for Gemini API to process the text you just sent..."
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: GeminiAI(),
+					Content: content,
 				},
 			})
-
+			if err != nil {
+				print("Unable to send Gemini message Error: ", err)
+			}
+			content = scripts.GeminiAI("What is the hackclub in less than 2000 characters?")
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
+			})
 			if err != nil {
 				print("Unable to send Gemini message Error: ", err)
 			}
@@ -268,37 +261,12 @@ func main() {
 	log.Println("Press Ctrl+C to exit")
 	<-stop
 
-	if RemoveCommands {
-		log.Println("Removing commands...")
-		for _, v := range registeredCommands {
-			err := s.ApplicationCommandDelete(s.State.User.ID, GuildID, v.ID)
-			if err != nil {
-				log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
-			}
+	log.Println("Removing commands...")
+	for _, v := range registeredCommands {
+		err := s.ApplicationCommandDelete(s.State.User.ID, GuildID, v.ID)
+		if err != nil {
+			log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
 		}
 	}
 	log.Println("Gracefully shutting down.")
-}
-
-func GeminiAI() string {
-	err := godotenv.Load()
-	if err != nil {
-		println("Error loading .env file")
-	}
-	ctx := context.Background() // Assumes API Key is set
-	client, err := genai.NewClient(ctx, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	result, err := client.Models.GenerateContent(
-		ctx,
-		"gemini-2.5-flash",
-		genai.Text("Generate python code as fast as you can!"),
-		nil,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return result.Text()
 }
