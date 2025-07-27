@@ -38,25 +38,44 @@ var (
 			Description: "Checks if Discord Bot has enough permissions",
 		},
 		{
-			Name:        "file-send-test",
+			Name:        "code",
 			Description: "Checks if Discord Bot can send files on the Discord Server",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "chosen_language",
+					Description: "Chosen programming that Google Gemini will code in",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "task",
+					Description: "Task you want Google Gemini to code",
+					Required:    true,
+				},
+			},
 		},
 		{
-			Name:        "google-gemini-test",
-			Description: "Checks if Discord Bot can receive messages from Google Gemini API",
-		},
-		{
-			Name:        "google-gemini-test-followup",
-			Description: "Requirement so Gemini API can function due to time constraints",
+			Name:        "ask",
+			Description: "Ask Google Gemini something",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "question",
+					Description: "Question you want to ask Google Gemini",
+					Required:    true,
+				},
+			},
 		},
 	}
 
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"ping": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			author := i.Member.User.DisplayName()
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "Pong!",
+					Content: "Pong! " + author + " ",
 				},
 			})
 
@@ -156,27 +175,53 @@ var (
 			}
 		},
 
-		"file-send-test": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		"code": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			options := i.ApplicationCommandData().Options
+			optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+			for _, opt := range options {
+				optionMap[opt.Name] = opt
+			}
+			chosenLanguage := optionMap["chosen_language"].StringValue()
+			fileExtension, fileType := scripts.FileSupportCheck(chosenLanguage)
+			task := optionMap["task"].StringValue()
+
+			DisplayName := i.Member.DisplayName()
+
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "Here is a file",
-					Files: []*discordgo.File{
-						{
-							ContentType: "text/plain",
-							Name:        "test.txt",
-							Reader:      strings.NewReader(scripts.GeminiAI("Create random code as fast as you can, it is going to be in a file.")),
-						},
+					Content: "Please wait for Gemini API to process the file",
+				},
+			})
+			if err != nil {
+				print("Unable to send message: ", err)
+			}
+			content, _ := scripts.GeminiAI(task, DisplayName, false, "file", chosenLanguage)
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Files: []*discordgo.File{
+					{
+						ContentType: "text/" + fileType,
+						Name:        "response" + fileExtension,
+						Reader:      strings.NewReader(content),
 					},
 				},
 			})
-
 			if err != nil {
-				print("Unable to send message with attachment Error: ", err)
+				print("Unable to send Gemini message Error: ", err)
 			}
 		},
 
-		"google-gemini-test": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		"ask": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			options := i.ApplicationCommandData().Options
+			optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+			for _, opt := range options {
+				optionMap[opt.Name] = opt
+			}
+			question := optionMap["question"].StringValue()
+
+			DisplayName := i.Member.DisplayName()
+			// Username := i.Member.User.Username // Will be used for other purposes later
+
 			content := "Please wait for Gemini API to process the text you just sent..."
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -187,12 +232,21 @@ var (
 			if err != nil {
 				print("Unable to send Gemini message Error: ", err)
 			}
-			content = scripts.GeminiAI("What is the hackclub in less than 2000 characters?")
+			first, rest := scripts.GeminiAI(question, DisplayName, true, "ask", "none")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-				Content: &content,
+				Content: &first,
 			})
 			if err != nil {
 				print("Unable to send Gemini message Error: ", err)
+			}
+			for a := range rest {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: rest[a],
+				})
+				if err != nil {
+					print("Unable to send Gemini message Error: ", err)
+				}
+				a++
 			}
 		},
 	}
