@@ -31,7 +31,46 @@ var (
 	commands = []*discordgo.ApplicationCommand{
 		{
 			Name:        "ping",
-			Description: "Sends out pong when running this slash command",
+			Description: "Sends out pong when running this slash command along with latency",
+		},
+		{
+			Name:        "ping-gemini",
+			Description: "Pings Google Gemini API and see how long it takes for a specific model to respond",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "model",
+					Description: "Name of the model Gemini API will use",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "Prompt that you want Google Gemini to follow and measure latency for",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "hi",
+			Description: "Sends out a friendly greeting powered by Google Gemini",
+		},
+		{
+			Name: "help",
+			Description: "Sends out help message with all the possible commands powered in a message powered by Google " +
+				"Gemini",
+		},
+		{
+			Name:        "bye",
+			Description: "Sends out a goodbye message powered by Google Gemini and shut down if user is a specific person",
+		},
+		{
+			Name:        "version",
+			Description: "Sends out a version information on what version the Discord Bot is on",
+		},
+		{
+			Name:        "new-stuff",
+			Description: "Sends out all the new additions to the Discord Bot added, powered by Google Gemini",
 		},
 		{
 			Name:        "permission-check",
@@ -71,18 +110,199 @@ var (
 
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
 		"ping": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Latency is: " + s.HeartbeatLatency().String(),
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send message pong, Error: ", err)
+			}
+		},
+
+		"ping-gemini": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			options := i.ApplicationCommandData().Options
+			optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+			for _, opt := range options {
+				optionMap[opt.Name] = opt
+			}
+			prompt := optionMap["prompt"].StringValue()
+			model := optionMap["model"].StringValue()
 			author := i.Member.User.DisplayName()
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: "Pong! " + author + " ",
+					Content: "Please wait for Gemini AI to respond",
 				},
 			})
-
 			if err != nil {
-				print("Unable to send message pong, Error: ", err)
+				log.Panic("Unable to send message, Error: ", err)
 			}
 
+			first, rest, latency := scripts.PingGemini(prompt, author, true, "ask", "none", model)
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &first,
+			})
+			if err != nil {
+				log.Panic("Unable to send message from Gemini, Error: ", err)
+			}
+			for a := range rest {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: rest[a],
+				})
+				if err != nil {
+					log.Panic("Unable to send message from Gemini, Error: ", err)
+				}
+			}
+			_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: "Latency: " + latency,
+			})
+		},
+
+		"hi": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			author := i.Member.DisplayName()
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Please wait for Gemini AI to respond",
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			prompt := "Send out a message to the author giving them a unique greeting that is less than 2000 characters"
+			content, _ := scripts.GeminiAI(prompt, author, false, "ask", "none", "lite")
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
+			})
+		},
+
+		"help": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			author := i.Member.DisplayName()
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Please wait for Gemini AI to respond",
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			commandNames := ""
+			commandDescriptions := ""
+			for i := range commands {
+				commandNames += commands[i].Name + ","
+				commandDescriptions += commands[i].Description + ","
+			}
+			firstContent, restOfContent := scripts.Help(commandNames, commandDescriptions, author)
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &firstContent,
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			for a := range restOfContent {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: restOfContent[a],
+				})
+				if err != nil {
+					log.Panic("Unable to send message from Gemini, Error: ", err)
+				}
+				a++
+			}
+		},
+
+		"bye": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			author := i.Member.DisplayName()
+			username := i.Member.User.Username
+			id := i.Member.User.ID
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Please wait for Gemini AI to respond",
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			content, restOfContent, isDev := scripts.Bye(author, username, id)
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			for a := range restOfContent {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: restOfContent[a],
+				})
+				if err != nil {
+					log.Panic("Unable to send message from Gemini, Error: ", err)
+				}
+			}
+			if isDev == true {
+				err := s.Close() // Later will allow program to close fully from bye command...
+				if err != nil {
+					log.Panic("Unable to close Discord Websocket, Error: ", err)
+				}
+			}
+		},
+
+		"version": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			author := i.Member.DisplayName()
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Please wait for Gemini AI to respond",
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			content, restOfContent := scripts.Version(author)
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &content,
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			for a := range restOfContent {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: restOfContent[a],
+				})
+				if err != nil {
+					log.Panic("Unable to send message from Gemini, Error: ", err)
+				}
+			}
+		},
+
+		"new-stuff": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			author := i.Member.DisplayName()
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Please wait for Gemini AI to respond",
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			first, restOfContent := scripts.NewStuff(author)
+			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: &first,
+			})
+			if err != nil {
+				log.Panic("Unable to send message, Error: ", err)
+			}
+			for a := range restOfContent {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: restOfContent[a],
+				})
+				if err != nil {
+					log.Panic("Unable to send message from Gemini, Error: ", err)
+				}
+			}
 		},
 
 		"permission-check": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -97,7 +317,7 @@ var (
 				})
 
 				if err != nil {
-					print("Unable to send message permissions, Error: ", err)
+					log.Panic("Unable to send message permissions, Error: ", err)
 				}
 				return
 
@@ -171,7 +391,6 @@ var (
 
 			if err != nil {
 				print("Unable to send message permissions, Error: ", err)
-
 			}
 		},
 
@@ -196,7 +415,7 @@ var (
 			if err != nil {
 				print("Unable to send message: ", err)
 			}
-			content, _ := scripts.GeminiAI(task, DisplayName, false, "file", chosenLanguage)
+			content, _ := scripts.GeminiAI(task, DisplayName, false, "file", chosenLanguage, "pro")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Files: []*discordgo.File{
 					{
@@ -230,21 +449,21 @@ var (
 				},
 			})
 			if err != nil {
-				print("Unable to send Gemini message Error: ", err)
+				log.Panic("Unable to send Gemini message Error: ", err)
 			}
-			first, rest := scripts.GeminiAI(question, DisplayName, true, "ask", "none")
+			first, rest := scripts.GeminiAI(question, DisplayName, true, "ask", "none", "pro")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &first,
 			})
 			if err != nil {
-				print("Unable to send Gemini message Error: ", err)
+				log.Panic("Unable to send Gemini message Error: ", err)
 			}
 			for a := range rest {
 				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 					Content: rest[a],
 				})
 				if err != nil {
-					print("Unable to send Gemini message Error: ", err)
+					log.Panic("Unable to send Gemini message Error: ", err)
 				}
 				a++
 			}
@@ -284,9 +503,9 @@ func main() {
 		for _, cmd := range existingCommands {
 			err := s.ApplicationCommandDelete(s.State.User.ID, GuildID, cmd.ID)
 			if err != nil {
-				log.Printf("Could not delete command '%v': %v", cmd.Name, err)
+				log.Panicf("Could not delete command '%v': %v", cmd.Name, err)
 			} else {
-				log.Printf("Deleted command: %v", cmd.Name)
+				log.Panicf("Deleted command: %v", cmd.Name)
 			}
 		}
 	}
@@ -306,7 +525,7 @@ func main() {
 	defer func(s *discordgo.Session) {
 		err := s.Close()
 		if err != nil {
-			log.Printf("Error closing session: %v", err)
+			log.Panicf("Error closing session: %v", err)
 		}
 	}(s)
 

@@ -23,16 +23,38 @@ func rules(displayName string, ruleType string, language string) string {
 		theRules = "Hi Gemini, here are all the rules you should follow when generating content for the Largo High School" +
 			" Coding Club Discord Server: \n" +
 			"1.The member who sent you the message is: " + displayName + "\n" +
-			"2.Use Discord Markdown \n" +
+			"2.Use Discord Markdown, Discord markdown does not have table support \n" +
+			"3.If your message is longer than 2000 characters (message = everything that you sent), it will be " +
+			"split up, make sure that you let it split so that words are not split apart or markdown is broken" +
 			"Below is the message the member sent: \n"
 		return theRules
+	} else if ruleType == "sudo" {
+		theRules = "Hi Gemini, this is your developer, D4LM, here are rules that you should follow when speaking to him: \n" +
+			"1. This you developer that made this Discord Bot in Golang \n" +
+			"2. Use Discord markdown to format your message, know that it does not have table support \n" +
+			"3. "
 	} else {
-		print("No rules specified")
+		print("No specific rules specified")
 	}
 	return theRules
 }
 
-func GeminiAI(prompt string, displayName string, splitString bool, ruleType string, Language string) (string, []string) {
+func ModelCheck(modelName string) string {
+	modelVersionName := ""
+	if modelName == "pro" {
+		modelVersionName = "gemini-2.5-pro"
+		return modelVersionName
+	} else if modelName == "flash" {
+		modelVersionName = "gemini-2.5-flash"
+		return modelVersionName
+	} else if modelName == "lite" {
+		modelVersionName = "gemini-2.5-flash-lite"
+		return modelVersionName
+	}
+	return modelVersionName
+}
+
+func GeminiAI(prompt string, displayName string, splitString bool, ruleType string, Language string, model string) (string, []string) {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -43,9 +65,11 @@ func GeminiAI(prompt string, displayName string, splitString bool, ruleType stri
 		log.Fatal(err)
 	}
 
+	modelVersionName := ModelCheck(model)
+
 	result, err := client.Models.GenerateContent(
 		ctx,
-		"gemini-2.5-pro",
+		modelVersionName,
 		genai.Text(rules(displayName, ruleType, Language)+prompt),
 		nil,
 	)
