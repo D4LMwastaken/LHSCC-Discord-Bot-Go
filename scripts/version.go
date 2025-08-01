@@ -1,7 +1,7 @@
 package scripts
 
 var (
-	version  = "v0.88"
+	version  = "v0.88-alpha"
 	language = "Go"
 	dev      = "D4LM"
 	codev    = "No one is the apprentice yet!"
