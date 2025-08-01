@@ -477,14 +477,15 @@ func init() {
 			h(s, i)
 		}
 	})
+	s.Identify.Intents = discordgo.IntentsGuildMembers | discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
 }
 
 func main() {
-	GuildID := os.Getenv("GUILD_ID")
+	s.AddHandler(GuildMemberAdd)
+	GuildIDs := strings.Split(os.Getenv("GUILD_ID"), ",")
 	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
 	})
-
 	err := s.Open()
 
 	if err != nil {
@@ -495,17 +496,18 @@ func main() {
 
 	log.Println("Removing existing commands...")
 
-	existingCommands, err := s.ApplicationCommands(s.State.User.ID, GuildID)
-
-	if err != nil {
-		log.Printf("Could not fetch existing commands: %v", err)
-	} else {
-		for _, cmd := range existingCommands {
-			err := s.ApplicationCommandDelete(s.State.User.ID, GuildID, cmd.ID)
-			if err != nil {
-				log.Panicf("Could not delete command '%v': %v", cmd.Name, err)
-			} else {
-				log.Panicf("Deleted command: %v", cmd.Name)
+	for i := range GuildIDs {
+		existingCommands, err := s.ApplicationCommands(s.State.User.ID, GuildIDs[i])
+		if err != nil {
+			log.Printf("Could not fetch existing commands: %v", err)
+		} else {
+			for _, cmd := range existingCommands {
+				err := s.ApplicationCommandDelete(s.State.User.ID, GuildIDs[i], cmd.ID)
+				if err != nil {
+					log.Panicf("Could not delete command '%v': %v", cmd.Name, err)
+				} else {
+					log.Printf("Deleted command: '%v' on %v", cmd.Name, GuildIDs[i])
+				}
 			}
 		}
 	}
@@ -515,11 +517,15 @@ func main() {
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 
 	for i, v := range commands {
-		cmd, err := s.ApplicationCommandCreate(s.State.User.ID, GuildID, v)
-		if err != nil {
-			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
+		for a := range GuildIDs {
+			cmd, err := s.ApplicationCommandCreate(s.State.User.ID, GuildIDs[a], v)
+			if err != nil {
+				log.Panicf("Cannot create '%v' command on: %v", v.Name, err)
+			} else {
+				log.Printf("Created command '%v' on %v", cmd.Name, GuildIDs[a])
+			}
+			registeredCommands[i] = cmd
 		}
-		registeredCommands[i] = cmd
 	}
 
 	defer func(s *discordgo.Session) {
@@ -536,10 +542,41 @@ func main() {
 
 	log.Println("Removing commands...")
 	for _, v := range registeredCommands {
-		err := s.ApplicationCommandDelete(s.State.User.ID, GuildID, v.ID)
-		if err != nil {
-			log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
+		for i := range GuildIDs {
+			err := s.ApplicationCommandDelete(s.State.User.ID, GuildIDs[i], v.ID)
+			if err != nil {
+				log.Printf("Cannot delete '%v' command on Guild '%v': %v", v.Name, GuildIDs[i], err)
+			}
 		}
 	}
+
 	log.Println("Gracefully shutting down.")
+}
+
+func GuildMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
+	channelID := os.Getenv("CHANNEL_ID")
+	println("A new member has joined!")
+	displayName := m.DisplayName()
+	prompt := "Generate a unique Discord message on the LHSCC Discord Server greeting the new user who just joined by mentioning them who's name is: " + displayName + "\n" +
+		"Then, tell the new user to check out readme-md, where the rules are and wait for a member to make them a member of the Discord Server.\n" +
+		"Mention them by: " + m.User.Mention()
+	firstContent, restOfContent := scripts.GeminiAI(prompt, displayName, true, "ask", "none", "flash")
+	_, err := s.ChannelMessageSend(channelID, firstContent)
+	for a := range restOfContent {
+		_, err = s.ChannelMessageSend(channelID, restOfContent[a])
+	}
+	if err != nil {
+		log.Panic("Error sending message when message joins: ", err)
+	}
+	DMChannel, err := s.UserChannelCreate(m.User.ID)
+	if err != nil {
+		log.Panic("Error creating DM channel: ", err)
+	}
+	_, err = s.ChannelMessageSend(DMChannel.ID, firstContent)
+	if err != nil {
+		log.Panic("Error sending message to DM: ", err)
+	}
+	for a := range restOfContent {
+		_, err = s.ChannelMessageSend(channelID, restOfContent[a])
+	}
 }
