@@ -7,7 +7,8 @@ import (
 	"log"
 )
 
-func rules(displayName string, ruleType string, language string) string {
+func rules(displayName string, userID string, ruleType string, language string) string {
+	history := geminiPast(userID)
 	theRules := ""
 	if ruleType == "file" {
 		theRules = "Hi Gemini, here are all the rules you should follow when generating content for the Largo High School" +
@@ -17,6 +18,7 @@ func rules(displayName string, ruleType string, language string) string {
 			"3. You are generating text into a file, so code only and put in comments anything you generate that is not code" +
 			"4. At the first line of the file, put a comment with the file name and file extension" +
 			"5. Do not have ``` at the start or the end, they are not necessary \n" +
+			"6. Here is the messages the author has sent before as context: " + history + "\n" +
 			"Below is the message the member sent: \n"
 		return theRules
 	} else if ruleType == "ask" {
@@ -26,13 +28,15 @@ func rules(displayName string, ruleType string, language string) string {
 			"2.Use Discord Markdown, Discord markdown does not have table support \n" +
 			"3.If your message is longer than 2000 characters (message = everything that you sent), it will be " +
 			"split up, make sure that you let it split so that words are not split apart or markdown is broken" +
+			"4. Here is the messages the author has sent before as context: " + history + "\n" +
 			"Below is the message the member sent: \n"
 		return theRules
 	} else if ruleType == "sudo" {
 		theRules = "Hi Gemini, this is your developer, D4LM, here are rules that you should follow when speaking to him: \n" +
 			"1. This you developer that made this Discord Bot in Golang \n" +
 			"2. Use Discord markdown to format your message, know that it does not have table support \n" +
-			"3. "
+			"3. Here is the messages the author has sent before as context: " + history + "\n" +
+			"Below is the message the developer has sent: "
 	} else {
 		print("No specific rules specified")
 	}
@@ -54,7 +58,7 @@ func ModelCheck(modelName string) string {
 	return modelVersionName
 }
 
-func GeminiAI(prompt string, displayName string, splitString bool, ruleType string, Language string, model string) (string, []string) {
+func GeminiAI(prompt string, displayName string, userID string, splitString bool, ruleType string, Language string, model string) (string, []string) {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -70,12 +74,14 @@ func GeminiAI(prompt string, displayName string, splitString bool, ruleType stri
 	result, err := client.Models.GenerateContent(
 		ctx,
 		modelVersionName,
-		genai.Text(rules(displayName, ruleType, Language)+prompt),
+		genai.Text(rules(displayName, userID, ruleType, Language)+prompt),
 		nil,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
+	go geminiSaver(prompt, result.Text(), userID, displayName)
+	// ^ Goroutine in case someone decides to have a long prompt or long response
 	if splitString == true {
 		return splitStringIntoChunks(result.Text())
 	} else {

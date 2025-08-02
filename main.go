@@ -15,6 +15,7 @@ import (
 var s *discordgo.Session
 
 func init() {
+	scripts.CreateFiles()
 	var err error
 	err = godotenv.Load()
 	if err != nil {
@@ -25,6 +26,13 @@ func init() {
 	if err != nil {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
+	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+			h(s, i)
+		}
+	})
+	s.Identify.Intents = discordgo.IntentsGuildMembers | discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
+	s.AddHandler(GuildMemberAdd)
 }
 
 var (
@@ -130,6 +138,7 @@ var (
 			prompt := optionMap["prompt"].StringValue()
 			model := optionMap["model"].StringValue()
 			author := i.Member.User.DisplayName()
+			userID := i.Member.User.ID
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -140,7 +149,7 @@ var (
 				log.Panic("Unable to send message, Error: ", err)
 			}
 
-			first, rest, latency := scripts.PingGemini(prompt, author, true, "ask", "none", model)
+			first, rest, latency := scripts.PingGemini(prompt, author, userID, true, "ask", "none", model)
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &first,
 			})
@@ -162,6 +171,7 @@ var (
 
 		"hi": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			author := i.Member.DisplayName()
+			userID := i.Member.User.ID
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -172,7 +182,7 @@ var (
 				log.Panic("Unable to send message, Error: ", err)
 			}
 			prompt := "Send out a message to the author giving them a unique greeting that is less than 2000 characters"
-			content, _ := scripts.GeminiAI(prompt, author, false, "ask", "none", "lite")
+			content, _ := scripts.GeminiAI(prompt, author, userID, false, "ask", "none", "lite")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &content,
 			})
@@ -180,6 +190,7 @@ var (
 
 		"help": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			author := i.Member.DisplayName()
+			userID := i.Member.User.ID
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -195,7 +206,7 @@ var (
 				commandNames += commands[i].Name + ","
 				commandDescriptions += commands[i].Description + ","
 			}
-			firstContent, restOfContent := scripts.Help(commandNames, commandDescriptions, author)
+			firstContent, restOfContent := scripts.Help(commandNames, commandDescriptions, author, userID)
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &firstContent,
 			})
@@ -251,6 +262,7 @@ var (
 
 		"version": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			author := i.Member.DisplayName()
+			userID := i.Member.User.ID
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -260,7 +272,7 @@ var (
 			if err != nil {
 				log.Panic("Unable to send message, Error: ", err)
 			}
-			content, restOfContent := scripts.Version(author)
+			content, restOfContent := scripts.Version(author, userID)
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &content,
 			})
@@ -279,6 +291,7 @@ var (
 
 		"new-stuff": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			author := i.Member.DisplayName()
+			userID := i.Member.User.ID
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -288,7 +301,7 @@ var (
 			if err != nil {
 				log.Panic("Unable to send message, Error: ", err)
 			}
-			first, restOfContent := scripts.NewStuff(author)
+			first, restOfContent := scripts.NewStuff(author, userID)
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &first,
 			})
@@ -405,6 +418,7 @@ var (
 			task := optionMap["task"].StringValue()
 
 			DisplayName := i.Member.DisplayName()
+			userID := i.Member.User.ID
 
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -415,8 +429,9 @@ var (
 			if err != nil {
 				print("Unable to send message: ", err)
 			}
-			content, _ := scripts.GeminiAI(task, DisplayName, false, "file", chosenLanguage, "pro")
+			content, _ := scripts.GeminiAI(task, DisplayName, userID, false, "file", chosenLanguage, "pro")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Content: nil,
 				Files: []*discordgo.File{
 					{
 						ContentType: "text/" + fileType,
@@ -439,7 +454,7 @@ var (
 			question := optionMap["question"].StringValue()
 
 			DisplayName := i.Member.DisplayName()
-			// Username := i.Member.User.Username // Will be used for other purposes later
+			userID := i.Member.User.ID
 
 			content := "Please wait for Gemini API to process the text you just sent..."
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -451,7 +466,7 @@ var (
 			if err != nil {
 				log.Panic("Unable to send Gemini message Error: ", err)
 			}
-			first, rest := scripts.GeminiAI(question, DisplayName, true, "ask", "none", "pro")
+			first, rest := scripts.GeminiAI(question, DisplayName, userID, true, "ask", "none", "pro")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &first,
 			})
@@ -471,17 +486,7 @@ var (
 	}
 )
 
-func init() {
-	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-			h(s, i)
-		}
-	})
-	s.Identify.Intents = discordgo.IntentsGuildMembers | discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
-}
-
 func main() {
-	s.AddHandler(GuildMemberAdd)
 	GuildIDs := strings.Split(os.Getenv("GUILD_ID"), ",")
 	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
@@ -554,13 +559,14 @@ func main() {
 }
 
 func GuildMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
-	channelID := os.Getenv("CHANNEL_ID")
+	channelID := os.Getenv("WELCOME_CHANNEL_ID")
 	println("A new member has joined!")
 	displayName := m.DisplayName()
+	userID := m.User.ID
 	prompt := "Generate a unique Discord message on the LHSCC Discord Server greeting the new user who just joined by mentioning them who's name is: " + displayName + "\n" +
 		"Then, tell the new user to check out readme-md, where the rules are and wait for a member to make them a member of the Discord Server.\n" +
 		"Mention them by: " + m.User.Mention()
-	firstContent, restOfContent := scripts.GeminiAI(prompt, displayName, true, "ask", "none", "flash")
+	firstContent, restOfContent := scripts.GeminiAI(prompt, displayName, userID, true, "ask", "none", "flash")
 	_, err := s.ChannelMessageSend(channelID, firstContent)
 	for a := range restOfContent {
 		_, err = s.ChannelMessageSend(channelID, restOfContent[a])
