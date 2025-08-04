@@ -55,6 +55,9 @@ func FileSupportCheck(language string) (string, string) {
 	} else if undercaseLanguage == "typescript" || language == "ts" {
 		fileExtension = ".ts"
 		fileType = "ts"
+	} else if undercaseLanguage == "html" {
+		fileExtension = ".html"
+		fileType = "html"
 	} else {
 		fileExtension = ".txt"
 		fileType = "plain"

@@ -11,18 +11,18 @@ func Bye(author string, username string, id string) (string, []string, bool) {
 			isDev = true
 			prompt := "Generate a unique goodbye as the detected person is the developer and the bot is shutting down " +
 				"shortly and mention the author"
-			content, restOfContent = GeminiAI(prompt, author, id, true, "sudo", "none", "pro")
+			content, restOfContent, _ = GeminiAI(prompt, author, id, true, "sudo", "none", "pro")
 			return content, restOfContent, isDev
-		} else {
+		} else { // Says unreachable code down here, but is somewhat possible
 			log.Panic("ID Verification failed, someone is took my username.")
 			prompt := "Generate a unique goodbye and the detected person is the not the devloper"
-			content, restOfContent = GeminiAI(prompt, author, id, true, "ask", "none", "lite")
+			content, restOfContent, _ = GeminiAI(prompt, author, id, true, "ask", "none", "lite")
 			return content, restOfContent, isDev
 		}
 		return content, restOfContent, isDev
 	} else {
 		prompt := "Generate a unique goodbye for the person"
-		content, restOfContent = GeminiAI(prompt, author, id, true, "ask", "none", "lite")
+		content, restOfContent, _ = GeminiAI(prompt, author, id, true, "ask", "none", "lite")
 		return content, restOfContent, isDev
 	}
 	return content, restOfContent, isDev

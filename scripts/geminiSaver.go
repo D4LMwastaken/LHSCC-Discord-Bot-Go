@@ -14,15 +14,17 @@ type Message struct {
 	UserID    string `json:"userid"`
 	Prompt    string `json:"prompt"`
 	Response  string `json:"response"`
+	Image     []byte `json:"image"`
 	Timestamp string `json:"timestamp"`
 }
 
-func geminiSaver(prompt string, response string, UserID string, author string) {
+func geminiSaver(prompt string, response string, UserID string, author string, image []byte) {
 	newMessage := Message{
 		Username:  author,
 		UserID:    UserID,
 		Prompt:    prompt,
 		Response:  response,
+		Image:     image,
 		Timestamp: time.Now().Local().String(), // Default is hopefully eastern time, but should not matter as server is on eastern time
 	}
 	err := appendJSON(newMessage, filename)

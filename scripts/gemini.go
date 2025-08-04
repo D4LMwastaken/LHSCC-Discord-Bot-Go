@@ -37,6 +37,15 @@ func rules(displayName string, userID string, ruleType string, language string) 
 			"2. Use Discord markdown to format your message, know that it does not have table support \n" +
 			"3. Here is the messages the author has sent before as context: " + history + "\n" +
 			"Below is the message the developer has sent: "
+		return theRules
+	} else if ruleType == "image" {
+		theRules = "Hi Gemini, here are all the rules you should follow when generating images for the Largo High School " +
+			"Coding Club Discord Server: \n" +
+			"1.The member who sent you the message is: " + displayName + "\n" +
+			"2.Use Discord Markdown, Discord markdown does not have table support \n" +
+			"3.Here is the messages the author has sent before as context: " + history + "\n" +
+			"4. Do not include the rules when generating images \n" +
+			"Below is the message the member sent: \n"
 	} else {
 		print("No specific rules specified")
 	}
@@ -47,18 +56,19 @@ func ModelCheck(modelName string) string {
 	modelVersionName := ""
 	if modelName == "pro" {
 		modelVersionName = "gemini-2.5-pro"
-		return modelVersionName
 	} else if modelName == "flash" {
 		modelVersionName = "gemini-2.5-flash"
-		return modelVersionName
 	} else if modelName == "lite" {
 		modelVersionName = "gemini-2.5-flash-lite"
-		return modelVersionName
+	} else if modelName == "image" {
+		modelVersionName = "gemini-2.0-flash-preview-image-generation"
+	} else {
+		modelVersionName = "gemini-2.5-flash"
 	}
 	return modelVersionName
 }
 
-func GeminiAI(prompt string, displayName string, userID string, splitString bool, ruleType string, Language string, model string) (string, []string) {
+func GeminiAI(prompt string, displayName string, userID string, splitString bool, ruleType string, Language string, model string) (string, []string, []byte) {
 	err := godotenv.Load(".env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -71,20 +81,43 @@ func GeminiAI(prompt string, displayName string, userID string, splitString bool
 
 	modelVersionName := ModelCheck(model)
 
+	var config *genai.GenerateContentConfig
+	if model == "image" {
+		config = &genai.GenerateContentConfig{
+			ResponseModalities: []string{"TEXT", "IMAGE"},
+		}
+	}
+
 	result, err := client.Models.GenerateContent(
 		ctx,
 		modelVersionName,
 		genai.Text(rules(displayName, userID, ruleType, Language)+prompt),
-		nil,
+		config,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	go geminiSaver(prompt, result.Text(), userID, displayName)
-	// ^ Goroutine in case someone decides to have a long prompt or long response
-	if splitString == true {
-		return splitStringIntoChunks(result.Text())
+
+	if model == "image" {
+		content := ""
+		var image []byte
+		for _, part := range result.Candidates[0].Content.Parts {
+			if part.Text != "" {
+				content += part.Text
+			} else if part.InlineData != nil {
+				image = part.InlineData.Data // Assumed to be only one image
+			}
+		}
+		go geminiSaver(prompt, content, userID, displayName, image)
+		return content, nil, image
 	} else {
-		return result.Text(), nil
+		go geminiSaver(prompt, result.Text(), userID, displayName, nil)
+		// ^ Goroutine in case someone decides to have a long prompt or long response
+		if splitString == true {
+			firstContent, restOfContent := splitStringIntoChunks(result.Text())
+			return firstContent, restOfContent, nil
+		} else {
+			return result.Text(), nil, nil
+		}
 	}
 }

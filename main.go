@@ -2,6 +2,7 @@ package main
 
 import (
 	"LHSCC-Discord-Bot/main/scripts"
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
@@ -114,6 +115,18 @@ var (
 				},
 			},
 		},
+		{
+			Name:        "generate",
+			Description: "Generate an image using the power of Google Gemini",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "prompt",
+					Description: "Prompt that you want to generate image",
+					Required:    true,
+				},
+			},
+		},
 	}
 
 	commandHandlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
@@ -182,7 +195,7 @@ var (
 				log.Panic("Unable to send message, Error: ", err)
 			}
 			prompt := "Send out a message to the author giving them a unique greeting that is less than 2000 characters"
-			content, _ := scripts.GeminiAI(prompt, author, userID, false, "ask", "none", "lite")
+			content, _, _ := scripts.GeminiAI(prompt, author, userID, false, "ask", "none", "lite")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &content,
 			})
@@ -429,7 +442,7 @@ var (
 			if err != nil {
 				print("Unable to send message: ", err)
 			}
-			content, _ := scripts.GeminiAI(task, DisplayName, userID, false, "file", chosenLanguage, "pro")
+			content, _, _ := scripts.GeminiAI(task, DisplayName, userID, false, "file", chosenLanguage, "pro")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: nil,
 				Files: []*discordgo.File{
@@ -466,7 +479,7 @@ var (
 			if err != nil {
 				log.Panic("Unable to send Gemini message Error: ", err)
 			}
-			first, rest := scripts.GeminiAI(question, DisplayName, userID, true, "ask", "none", "pro")
+			first, rest, _ := scripts.GeminiAI(question, DisplayName, userID, true, "ask", "none", "pro")
 			_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 				Content: &first,
 			})
@@ -481,6 +494,49 @@ var (
 					log.Panic("Unable to send Gemini message Error: ", err)
 				}
 				a++
+			}
+		},
+
+		"generate": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			options := i.ApplicationCommandData().Options
+			optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
+			for _, opt := range options {
+				optionMap[opt.Name] = opt
+			}
+			prompt := optionMap["prompt"].StringValue()
+
+			displayName := i.Member.DisplayName()
+			userID := i.Member.User.ID
+
+			content := "Please wait for Gemini API to process the text you just sent..."
+			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: content,
+				},
+			})
+			if err != nil {
+				log.Panic("Unable to send Gemini message Error: ", err)
+			}
+			first, _, image := scripts.GeminiAI(prompt, displayName, userID, false, "image", "none", "image")
+			if image != nil {
+				_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+					Content: &first,
+					Files: []*discordgo.File{
+						{
+							ContentType: "image/png",
+							Name:        "response.png",
+							Reader:      bytes.NewReader(image),
+						},
+					},
+				})
+				if err != nil {
+					log.Panic("Unable to send Gemini message Error: ", err)
+				}
+			} else {
+				_, err = s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Content: first + "No image sent.",
+				})
 			}
 		},
 	}
@@ -566,7 +622,7 @@ func GuildMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 	prompt := "Generate a unique Discord message on the LHSCC Discord Server greeting the new user who just joined by mentioning them who's name is: " + displayName + "\n" +
 		"Then, tell the new user to check out readme-md, where the rules are and wait for a member to make them a member of the Discord Server.\n" +
 		"Mention them by: " + m.User.Mention()
-	firstContent, restOfContent := scripts.GeminiAI(prompt, displayName, userID, true, "ask", "none", "flash")
+	firstContent, restOfContent, _ := scripts.GeminiAI(prompt, displayName, userID, true, "ask", "none", "flash")
 	_, err := s.ChannelMessageSend(channelID, firstContent)
 	for a := range restOfContent {
 		_, err = s.ChannelMessageSend(channelID, restOfContent[a])
